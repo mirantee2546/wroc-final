@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white py-3">
+        <h5 class="m-0 fw-bold text-primary"><i class="bi bi-card-list"></i> รายการสั่งซื้อของคุณ</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="border-0 small text-uppercase text-muted ps-3">ID ออเดอร์</th>
+                        <th class="border-0 small text-uppercase text-muted">บริการ</th>
+                        <th class="border-0 small text-uppercase text-muted">จำนวน</th>
+                        <th class="border-0 small text-uppercase text-muted">ราคา</th>
+                        <th class="border-0 small text-uppercase text-muted">สถานะ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td class="fw-bold ps-3">#{{ order.id }}</td>
+                        <td>{{ order.service_name }}</td>
+                        <td>{{ "{:,}".format(order.quantity) }}</td>
+                        <td class="text-primary fw-bold">{{ "%.2f"|format(order.total_price) }} ฿</td>
+                        <td>
+                            {% if order.status == 'Pending' %}
+                                <span class="badge bg-warning-subtle text-warning border border-warning px-3 rounded-pill">
+                                    <i class="bi bi-hourglass-split"></i> รอดำเนินการ
+                                </span>
+                            {% elif order.status == 'Completed' %}
+                                <span class="badge bg-success-subtle text-success border border-success px-3 rounded-pill">
+                                    <i class="bi bi-check-circle"></i> สำเร็จแล้ว
+                                </span>
+                            {% elif order.status == 'Canceled' %}
+                                <span class="badge bg-danger-subtle text-danger border border-danger px-3 rounded-pill">
+                                    <i class="bi bi-x-circle"></i> ยกเลิก/คืนเงินแล้ว
+                                </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

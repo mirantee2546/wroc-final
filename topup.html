@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+        <div class="card shadow-sm border-0 mb-4 bg-primary text-white">
+            <div class="card-body p-4 text-center">
+                <h6 class="text-white-50 mb-2">ยอดเงินคงเหลือปัจจุบัน</h6>
+                <h1 class="display-5 fw-bold mb-0">{{ "%.2f"|format(current_user.balance) }} ฿</h1>
+            </div>
+        </div>
+
+        <div class="card shadow-sm border-0 p-4">
+            <h5 class="fw-bold mb-4"><i class="bi bi-plus-circle text-primary me-2"></i> เติมเงินเข้าระบบ</h5>
+            
+            <form action="/topup" method="POST">
+                <div class="mb-4">
+                    <label class="form-label small fw-bold text-muted">ระบุจำนวนเงิน (บาท)</label>
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-light border-2" style="border-right: none;"><i class="bi bi-cash-stack"></i></span>
+                        <input type="number" name="amount" class="form-control border-2" placeholder="0.00" min="1" step="0.01" required style="border-left: none;">
+                    </div>
+                    <div class="form-text mt-2">เติมขั้นต่ำ 1.00 บาท ระบบจะเพิ่มยอดเงินให้ทันที</div>
+                </div>
+
+                <div class="p-3 bg-light rounded-3 border mb-4 text-center">
+                    <p class="small fw-bold text-muted mb-2">สแกนชำระเงินผ่าน PromptPay</p>
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=WROC_PAYMENT" alt="QR Code" class="img-fluid rounded mb-2" style="max-width: 150px;">
+                    <p class="small text-muted mb-0">ชำระแล้ว ยอดเงินจะเข้าอัตโนมัติ</p>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold py-3 shadow">
+                    ยืนยันการแจ้งโอนเงิน
+                </button>
+            </form>
+        </div>
+
+        <div class="mt-4">
+            <div class="card shadow-sm border-0 p-3 bg-light">
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-info-circle-fill text-primary fs-4 me-3"></i>
+                    <div class="small text-muted">
+                        หากยอดเงินไม่เข้าภายใน 5 นาที โปรดติดต่อแอดมินพร้อมแนบหลักฐานการโอนเงิน
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

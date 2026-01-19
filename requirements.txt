@@ -1,0 +1,7 @@
+﻿flask
+flask-sqlalchemy
+flask-login
+line-bot-sdk
+requests
+gunicorn
+crcmod

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">
+        <h5 class="mb-0"><i class="bi bi-shield-lock-fill me-2"></i>ระบบจัดการหลังบ้าน (Admin Panel)</h5>
+        <span class="badge bg-primary">โหมดผู้ดูแลระบบ</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-4">ID / ผู้ใช้</th>
+                        <th>รายละเอียดบริการ / ลิงก์</th>
+                        <th>ราคา</th>
+                        <th>สถานะ</th>
+                        <th class="text-center pe-4">จัดการรายการ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr>
+                        <td class="ps-4">
+                            <div class="fw-bold">#{{ order.id }}</div>
+                            <small class="text-muted">User ID: {{ order.user_id }}</small>
+                        </td>
+                        <td>
+                            <div class="text-primary fw-bold">{{ order.service_name }}</div>
+                            <small>
+                                <a href="{{ order.url_link }}" target="_blank" class="text-decoration-none text-truncate d-inline-block" style="max-width: 200px;">
+                                    {{ order.url_link }}
+                                </a>
+                            </small>
+                        </td>
+                        <td class="fw-bold text-success">{{ "%.2f"|format(order.total_price) }} ฿</td>
+                        <td>
+                            {% if order.status == 'Pending' %}
+                            <span class="badge rounded-pill bg-warning text-dark px-3">รอดำเนินการ</span>
+                            {% elif order.status == 'Completed' %}
+                            <span class="badge rounded-pill bg-success px-3">สำเร็จแล้ว</span>
+                            {% else %}
+                            <span class="badge rounded-pill bg-danger px-3">ยกเลิกแล้ว</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center pe-4">
+                            <div class="btn-group shadow-sm border rounded-pill overflow-hidden">
+                                <a href="{{ url_for('update_status', order_id=order.id, new_status='Pending') }}" class="btn btn-sm btn-white text-warning fw-bold">รอ</a>
+                                <a href="{{ url_for('update_status', order_id=order.id, new_status='Completed') }}" class="btn btn-sm btn-white text-success fw-bold border-start">สำเร็จ</a>
+                                <a href="{{ url_for('refund_order', order_id=order.id) }}" 
+                                   class="btn btn-sm btn-white text-danger fw-bold border-start"
+                                   onclick="return confirm('ยืนยันการยกเลิกรายการและคืนเงินให้ลูกค้า?')">ยกเลิก</a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
