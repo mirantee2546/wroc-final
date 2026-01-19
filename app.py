@@ -1,132 +1,207 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, request, redirect, url_for, flash
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
-from datetime import datetime
-import requests
-import json
-import os
-import crcmod
+from models import db, User, Order
+from linebot import LineBotApi
+from linebot.models import TextSendMessage
+
+# LINE Configuration
+LINE_CHANNEL_ACCESS_TOKEN = 'sJqu5ROglXJpMK4l976CaezwEtwB4QS9z/iugKPOJVdx+zQCgEP9+iRP74IfG/NYjQeQw0nTD1bAiGHlUDdyhgtr13u/RHyHkjQRM6brS3lLZ1bN/lSgXk7IKD3jSSwZojoUZ+dZhyOQ8+zRGwCeTgdB04t89/1O/w1cDnyilFU='
+LINE_ADMIN_USER_ID = 'Uc96074081e475c7ba28fcb730b80e16e' 
+
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+
+def send_line_message(message):
+    try:
+        line_bot_api.push_message(LINE_ADMIN_USER_ID, TextSendMessage(text=message))
+    except Exception as e:
+        print(f"Error: {e}")
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'wroc_secure_2026'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///wroc.db'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 
-db = SQLAlchemy(app)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///wroc_database.db'
+app.config['SECRET_KEY'] = 'dev-key-123'
 
-# --- 🟢 ข้อมูลการตั้งค่า 🟢 ---
-LINE_ACCESS_TOKEN = "JaRlTPLo2VkS+K73UswKn21OE6sIBB2Wy7OniW8Y5HX8pxxY2q/S7xHTAj/cRVkikgF3OizUdBT4kI86zIlvetZfjjJPVPLNLlCxrD4mEBAkcqclALRhT6JTKl1P41Ge/QzAnjU08YefjbPnguue6QdB04t89/1O/w1cDnyilFU="
-MY_LINE_USER_ID = "Ub5278cd7ddc621de485b982940e21ef1"
-PROMPTPAY_ID = "0981810233" 
+db.init_app(app)
 
-def generate_promptpay_payload(phone_number, amount):
-    amount = "{:0.2f}".format(float(amount))
-    target = phone_number.replace('-', '').replace(' ', '')
-    if len(target) <= 10:
-        target = "0066" + target[1:]
-        target = target.rjust(13, '0')
-    payload = "000201010211"
-    account_info = "0010A000000677010111" + "0113" + target
-    payload += "29" + str(len(account_info)).zfill(2) + account_info
-    payload += "5303764"
-    payload += "54" + str(len(amount)).zfill(2) + amount
-    payload += "5802TH6304"
-    crc_func = crcmod.predefined.mkCrcFun('xmodem')
-    payload += hex(crc_func(payload.encode('ascii'))).upper()[2:].zfill(4)
-    return payload
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    password = db.Column(db.String(100), nullable=False)
-    balance = db.Column(db.Float, default=0.0)
-    is_admin = db.Column(db.Boolean, default=False)
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
-class Order(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    username = db.Column(db.String(50))
-    service = db.Column(db.String(100))
-    link = db.Column(db.String(255))
-    quantity = db.Column(db.Integer)
-    price = db.Column(db.Float)
-    status = db.Column(db.String(50), default='Pending') 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-with app.app_context():
-    db.create_all()
+# --- ROUTES สำหรับลูกค้า ---
 
 @app.route('/')
-def home():
-    if 'user_id' in session:
-        user = User.query.get(session['user_id'])
-        orders = Order.query.filter_by(user_id=user.id).order_by(Order.created_at.desc()).all()
-        return render_template('index.html', user=user, orders=orders)
-    return redirect(url_for('login'))
-
-@app.route('/order', methods=['POST'])
-def order_action():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    user = User.query.get(session['user_id'])
-    service = request.form.get('service')
-    link = request.form.get('link')
-    quantity = int(request.form.get('quantity'))
-    prices = {'FB_LIKE': 0.1, 'IG_FOLLOW': 0.2, 'TK_VIEW': 0.05}
-    total_price = quantity * prices.get(service, 0.1)
-    
-    new_order = Order(user_id=user.id, username=user.username, service=service, link=link, quantity=quantity, price=total_price, status='Waiting Payment')
-    db.session.add(new_order); db.session.commit()
-
-    if user.balance >= total_price:
-        user.balance -= total_price; new_order.status = 'Pending'; db.session.commit()
-        return redirect(url_for('home'))
-    return redirect(url_for('checkout', order_id=new_order.id))
-
-@app.route('/checkout/<int:order_id>')
-def checkout(order_id):
-    order = Order.query.get(order_id)
-    qr_payload = generate_promptpay_payload(PROMPTPAY_ID, order.price)
-    return render_template('checkout.html', order=order, qr_payload=qr_payload)
-
-@app.route('/confirm_payment/<int:order_id>', methods=['POST'])
-def confirm_payment(order_id):
-    order = Order.query.get(order_id)
-    file = request.files.get('slip')
-    if file:
-        if not os.path.exists('static/uploads'): os.makedirs('static/uploads')
-        file.save(os.path.join('static/uploads', secure_filename(f"wroc_slip_{order.id}.png")))
-        msg = f"📩 WROC แจ้งโอนเงิน: #{order.id}\n👤 {order.username}\n💰 {order.price} ฿"
-        requests.post("https://api.line.me/v2/bot/message/push", headers={"Authorization": f"Bearer {LINE_ACCESS_TOKEN}"}, json={"to": MY_LINE_USER_ID, "messages": [{"type": "text", "text": msg}]})
-        flash('แจ้งโอนเรียบร้อย รอตรวจสอบ', 'success'); return redirect(url_for('home'))
-    return redirect(url_for('checkout', order_id=order_id))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        user = User.query.filter_by(username=request.form.get('username')).first()
-        if user and check_password_hash(user.password, request.form.get('password')):
-            session['user_id'] = user.id
-            return redirect(url_for('home'))
-        return "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
-    return render_template('login.html')
+@login_required
+def index():
+    services = [
+        {'id': 1, 'name': 'ปั้มไลค์ Facebook', 'price': 0.05},
+        {'id': 2, 'name': 'เพิ่มผู้ติดตาม IG', 'price': 0.10}
+    ]
+    return render_template('index.html', services=services)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        hashed_pw = generate_password_hash(request.form.get('password'))
-        new_user = User(username=request.form.get('username'), password=hashed_pw)
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if User.query.filter_by(username=username).first():
+            return "ชื่อผู้ใช้นี้ถูกใช้ไปแล้ว"
+        
+        new_user = User(username=username)
+        new_user.set_password(password)
         db.session.add(new_user)
-        try:
-            db.session.commit()
-            return redirect(url_for('login'))
-        except:
-            return "ชื่อนี้ถูกใช้ไปแล้ว"
+        db.session.commit()
+        return redirect(url_for('login'))
     return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = User.query.filter_by(username=username).first()
+        
+        if user and user.check_password(password):
+            login_user(user)
+            # ถ้าเป็น Admin1 ให้ไปหน้าแอดมินโดยตรง
+            if user.username == 'Admin1':
+                return redirect(url_for('admin_dashboard'))
+            return redirect(url_for('index'))
+        return "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง"
+    return render_template('login.html')
+
+@app.route('/order', methods=['POST'])
+@login_required
+def place_order():
+    quantity = int(request.form.get('quantity'))
+    service_id = request.form.get('service')
+    link = request.form.get('link')
+    
+    price_per_unit = 0.05 if service_id == '1' else 0.10
+    total_cost = quantity * price_per_unit
+
+    if current_user.balance < total_cost:
+        return "<h3>ยอดเงินไม่เพียงพอ! <a href='/topup'>ไปหน้าเติมเงิน</a></h3>"
+
+    current_user.balance -= total_cost
+    new_order = Order(
+        user_id=current_user.id,
+        service_name="บริการ ID: " + service_id,
+        url_link=link,
+        quantity=quantity,
+        total_price=total_cost,
+        status='Pending'
+    )
+    db.session.add(new_order)
+    db.session.commit()
+    
+    # ส่งแจ้งเตือนเข้า LINE
+   # แก้ไขส่วนการส่งแจ้งเตือนเข้า LINE ให้มีลิงก์งาน
+    message_to_admin = (
+        f"🔔 มีออเดอร์ใหม่!\n"
+        f"👤 ผู้สั่ง: {current_user.username}\n"
+        f"🛠 บริการ: {new_order.service_name}\n"
+        f"🔢 จำนวน: {quantity}\n"
+        f"🔗 ลิงก์งาน: {link}"  # เพิ่มบรรทัดนี้เพื่อส่งลิงก์เข้าไป
+    )
+    
+    send_line_message(message_to_admin)
+    
+    return redirect(url_for('view_history'))
+
+@app.route('/history')
+@login_required
+def view_history():
+    orders = Order.query.filter_by(user_id=current_user.id).order_by(Order.id.desc()).all()
+    return render_template('history.html', orders=orders)
+
+@app.route('/topup', methods=['GET', 'POST'])
+@login_required
+def topup():
+    if request.method == 'POST':
+        amount = float(request.form.get('amount'))
+        current_user.balance += amount
+        db.session.commit()
+        return redirect(url_for('index'))
+    # แก้ไขบรรทัดนี้ให้ส่ง user=current_user เข้าไปด้วย
+    return render_template('topup.html', user=current_user)
 
 @app.route('/logout')
 def logout():
-    session.pop('user_id', None)
+    logout_user()
     return redirect(url_for('login'))
 
-if __name__ == '__main__':
-    app.run(debug=True)
+# --- ROUTES สำหรับ ADMIN (ต้องเป็น Admin1 เท่านั้น) ---
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        user = User.query.filter_by(username=username).first()
+        if user and user.username == 'Admin1' and user.check_password(password):
+            login_user(user)
+            return redirect(url_for('admin_dashboard'))
+        flash("สิทธิ์แอดมินไม่ถูกต้อง", "danger")
+    return render_template('admin_login.html')
+
+@app.route('/admin')
+@login_required
+def admin_dashboard():
+    if current_user.username != 'Admin1':
+        logout_user()
+        return redirect(url_for('admin_login'))
+    all_orders = Order.query.order_by(Order.id.desc()).all()
+    return render_template('admin.html', orders=all_orders)
+
+@app.route('/update_status/<int:order_id>/<string:new_status>')
+@login_required
+def update_status(order_id, new_status):
+    if current_user.username != 'Admin1':
+        return "Unauthorized", 403
+    order = Order.query.get(order_id)
+    if order:
+        order.status = new_status
+        db.session.commit()
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/refund/<int:order_id>')
+@login_required
+def refund_order(order_id):
+    if current_user.username != 'Admin1':
+        return "Unauthorized", 403
+    order = Order.query.get(order_id)
+    if order and order.status != 'Canceled':
+        user = User.query.get(order.user_id)
+        user.balance += order.total_price
+        order.status = 'Canceled'
+        db.session.commit()
+    return redirect(url_for('admin_dashboard'))
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    # นับจำนวนออเดอร์แยกตามสถานะของลูกค้าคนนั้นๆ
+    total_orders = Order.query.filter_by(user_id=current_user.id).count()
+    pending_orders = Order.query.filter_by(user_id=current_user.id, status='Pending').count()
+    completed_orders = Order.query.filter_by(user_id=current_user.id, status='Completed').count()
+    
+    # ดึง 5 ออเดอร์ล่าสุดมาโชว์ในตาราง
+    recent_orders = Order.query.filter_by(user_id=current_user.id).order_by(Order.id.desc()).limit(5).all()
+    
+    return render_template('dashboard.html', 
+                           total=total_orders, 
+                           pending=pending_orders, 
+                           completed=completed_orders,
+                           orders=recent_orders)
+
+# ... โค้ดส่วนอื่นๆ ของคุณ ...
+
+# ใส่ไว้ก่อนบรรทัดรันแอป เพื่อให้ระบบสร้างตาราง User และ Order อัตโนมัติบน Render
+with app.app_context():
+    db.create_all()
+
+if __name__ == "__main__":
+    app.run()
